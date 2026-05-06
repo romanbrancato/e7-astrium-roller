@@ -7,9 +7,12 @@ from time import sleep
 from adbutils import adb
 
 from client import Client
-from detection import locate_image
+from detection import locate_image, find_value
 
-THRESHOLD = 0.99
+THRESHOLD = 0.90
+
+REPLACE_COORDS = (500, 350)
+CHANGE_SUBSTATS_COORDS = (360, 480)
 
 
 def get_key():
@@ -62,27 +65,23 @@ def run(client):
     print("Rolling... (press Ctrl+C to stop)")
     while True:
         roll += 1
-
-        replace_pos = locate_image(client.capture_screen(), "replace.png", THRESHOLD)
-        if replace_pos:
-            client.click(replace_pos)
+        client.click(REPLACE_COORDS)
         sleep(0.1)
 
-        cancel_pos = locate_image(client.capture_screen(), "cancel.png", THRESHOLD)
+        screen = client.capture_screen()
+        cancel_pos = locate_image(screen, "cancel.png", THRESHOLD)
         if not cancel_pos:
             continue
 
-        if locate_image(client.capture_screen(), "5_speed_trimmed.png", THRESHOLD):
+        max_speed_pos = locate_image(screen, "max_speed.png", THRESHOLD)
+        if max_speed_pos and find_value(screen, max_speed_pos, "5.png", THRESHOLD):
             print(f"5 speed found on roll {roll}!")
             return
 
         client.click(cancel_pos)
         sleep(0.1)
-
-        change_pos = locate_image(client.capture_screen(), "change_substats.png", THRESHOLD)
-        if change_pos:
-            client.click(change_pos)
-        sleep(0.3)
+        client.click(CHANGE_SUBSTATS_COORDS)
+        sleep(0.4)
 
 
 def main():
