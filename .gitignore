@@ -1,0 +1,4 @@
+﻿venv/
+debug_crops/
+__pycache__/
+*.pyc

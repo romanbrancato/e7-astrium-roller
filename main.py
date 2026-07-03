@@ -9,7 +9,7 @@ from adbutils import adb
 from client import Client
 from detection import locate_image, find_value
 
-THRESHOLD = 0.90
+THRESHOLD = 0.85
 
 REPLACE_COORDS = (500, 350)
 CHANGE_SUBSTATS_COORDS = (360, 480)
@@ -74,7 +74,7 @@ def run(client):
             continue
 
         max_speed_pos = locate_image(screen, "max_speed.png", THRESHOLD)
-        if max_speed_pos and find_value(screen, max_speed_pos, "5.png", THRESHOLD):
+        if max_speed_pos and find_value(screen, max_speed_pos, 5):
             print(f"5 speed found on roll {roll}!")
             return
 
