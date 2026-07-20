@@ -25,5 +25,5 @@ if not exist ".\venv\Scripts\python.exe" (
     echo.
 )
 
-.\venv\Scripts\python.exe main.py
+.\venv\Scripts\python.exe gui.py
 pause
