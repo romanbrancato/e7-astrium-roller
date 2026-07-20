@@ -66,7 +66,7 @@ def run(client):
     while True:
         roll += 1
         client.click(REPLACE_COORDS)
-        sleep(0.1)
+        sleep(0.8)
 
         screen = client.capture_screen()
         cancel_pos = locate_image(screen, "cancel.png", THRESHOLD)
@@ -79,12 +79,18 @@ def run(client):
             return
 
         client.click(cancel_pos)
-        sleep(0.1)
+        sleep(0.5)
         client.click(CHANGE_SUBSTATS_COORDS)
-        sleep(0.4)
+        sleep(0.8)
 
 
 def main():
+    import subprocess
+    subprocess.run(["adb", "kill-server"], check=False)
+    subprocess.run(["adb", "start-server"], check=False)
+    time.sleep(1)  # give it a moment
+
+
     devices = adb.device_list()
     if not devices:
         print("No devices found. Make sure an emulator or device is connected.")
