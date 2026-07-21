@@ -1,22 +1,30 @@
 import re
 from time import sleep
 
-from detection import locate_image, read_row, is_percent
+import cv2
+
+from detection import locate_image, read_row, is_percent, icon_matches_at
 
 THRESHOLD = 0.85
-CHANGE_SUBSTATS_COORDS = (360, 480)  
+CHANGE_SUBSTATS_COORDS = (360, 480)    
 
 ROW_Y = [243, 274, 305, 336]           
 ROW_ANCHOR_X = 403                     
-LABEL_X_OFFSET = (0, 100)              
-VALUE_X_OFFSET = (100, 280)            
 
+LABEL_X_OFFSET = (0, 130)              
+VALUE_X_OFFSET = (100, 280)            
 
 LOCK_BUTTON_COORDS = [(267, 177), (267, 219), (267, 251), (267, 287)]
 
 APPLY_COORDS = (558, 447)              
 CONFIRM_EQUIPMENT_COORDS = (800, 470)  
 REPLACE_COORDS = (500, 350)            
+
+LOCKED_ICON_THRESHOLD = 0.9
+
+BASE_ROW_ANCHOR_X = 300
+BASE_LABEL_X_OFFSET = (-8, 100)
+BASE_VALUE_X_OFFSET = (100, 280)
 
 WILDCARD = "Any (accept anything)"
 FLAT = "Any Flat Stat"
@@ -69,7 +77,6 @@ def category_matches(category, label_text, value_text, target_value=None):
     if category == PERCENT:
         return is_percent(value_text)
 
-    # Specific named stat, e.g. "Speed" or "Attack%"
     base_name = category.replace("%", "").strip().lower()
     label_clean = label_text.strip().lower()
     if base_name not in label_clean:
@@ -84,16 +91,37 @@ def category_matches(category, label_text, value_text, target_value=None):
     return True
 
 
+def detect_existing_locks(client, log=print):
+    screen = client.capture_screen()
+    locked = [False, False, False, False]
+    for i, coord in enumerate(LOCK_BUTTON_COORDS):
+        if icon_matches_at(screen, "locked_icon.png", *coord, threshold=LOCKED_ICON_THRESHOLD, label=f"lock_slot{i}"):
+            locked[i] = True
+
+    lock_count = sum(locked)
+    if lock_count:
+        for i, (_, y) in enumerate(LOCK_BUTTON_COORDS):
+            if not locked[i]:
+                continue
+            name, value = read_row(
+                screen, BASE_ROW_ANCHOR_X, y,
+                label_x_offset=BASE_LABEL_X_OFFSET, value_x_offset=BASE_VALUE_X_OFFSET,
+                row_height=26, row_label=f"existing_row{i}", enhance=True, upscale=3,
+                value_psm=8, value_enhance=False, value_interp=cv2.INTER_CUBIC,
+            )
+            log(f"Detected existing lock at slot {i}: '{name.strip()} {value.strip()}'")
+        log(f"Resuming from priority #{lock_count + 1} ({lock_count} already locked).")
+    return locked, lock_count
+
+
 MAX_LOCKS = 2  
 
 
 def roll_full_piece(client, priorities, max_rolls=3000, log=print, stop_event=None):
-
     assert len(priorities) == 4, "Priority list must have exactly 4 entries."
 
-    locked = [False, False, False, False]   # which POPUP row indices are locked
-    next_priority_idx = 0                    # next priority to satisfy, strictly in order
-    lock_count = 0
+    locked, lock_count = detect_existing_locks(client, log=log)   
+    next_priority_idx = lock_count                                 
     roll = 0
 
     log(f"Starting full-piece roll. Priorities: {priorities}")
@@ -107,20 +135,20 @@ def roll_full_piece(client, priorities, max_rolls=3000, log=print, stop_event=No
         client.click(CHANGE_SUBSTATS_COORDS)
         sleep(0.9)
         client.click(REPLACE_COORDS)
-        sleep(1.2)
+        sleep(0.9)
 
         screen = client.capture_screen()
         cancel_pos = locate_image(screen, "cancel.png", THRESHOLD)
         if not cancel_pos:
             log(f"Roll {roll}: popup not detected after clicking Change Substats "
                 f"(cancel.png not found) — retrying.")
-            sleep(0.3)
+            sleep(0.9)
             continue
 
         rows = {}
         for i, y in enumerate(ROW_Y):
             if locked[i]:
-                continue  # locked rows don't change; no need to re-OCR them
+                continue
             name, value = read_row(
                 screen, ROW_ANCHOR_X, y,
                 label_x_offset=LABEL_X_OFFSET, value_x_offset=VALUE_X_OFFSET,
@@ -129,7 +157,7 @@ def roll_full_piece(client, priorities, max_rolls=3000, log=print, stop_event=No
             rows[i] = (name, value)
 
         if lock_count < MAX_LOCKS:
-            matched = []  # list of (row_index, priority_index)
+            matched = []  
             claimed_rows = set()
             check_idx = next_priority_idx
             while check_idx < 4 and lock_count + len(matched) < MAX_LOCKS:
@@ -157,20 +185,19 @@ def roll_full_piece(client, priorities, max_rolls=3000, log=print, stop_event=No
                     log(f"Roll {roll}: locking row {row_i} ('{name.strip()} {value.strip()}') "
                         f"for priority #{p_idx + 1} ('{category}' = {target_desc})")
                     client.click(LOCK_BUTTON_COORDS[row_i])
-                    sleep(0.7)
+                    sleep(0.9)
                     locked[row_i] = True
                     lock_count += 1
                     next_priority_idx = p_idx + 1
-                continue  # go straight to the next Change Substats click
+                continue  
 
             client.click(cancel_pos)
-            sleep(0.7)
+            sleep(0.9)
             continue
 
         else:
             remaining_priority_idxs = [2, 3]
-            unlocked_rows = list(rows.keys())
-            available_rows = list(unlocked_rows)
+            available_rows = list(rows.keys())
             match_ok = True
             for p_idx in remaining_priority_idxs:
                 category, target_value = priorities[p_idx]
@@ -188,12 +215,12 @@ def roll_full_piece(client, priorities, max_rolls=3000, log=print, stop_event=No
             if match_ok:
                 log(f"Roll {roll}: remaining unlocked rows satisfy priorities #3 and #4. Finalizing...")
                 client.click(APPLY_COORDS)
-                sleep(0.5)
+                sleep(0.9)
                 client.click(CONFIRM_EQUIPMENT_COORDS)
                 return True
 
             client.click(cancel_pos)
-            sleep(0.7)
+            sleep(0.9)
             continue
 
     log(f"Stopped after {roll} rolls without satisfying all priorities (max_rolls reached).")
